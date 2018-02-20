@@ -64,6 +64,10 @@ class Tabs extends Component {
      * Override the inline-styles of the InkBar.
      */
     inkBarStyle: PropTypes.object,
+      /**
+       * Called when the selected value change.
+       */
+    onChange: PropTypes.func,
     /**
      * Override the inline-styles of the root element.
      */
@@ -80,6 +84,10 @@ class Tabs extends Component {
      * Override the inline-styles of the tab template.
      */
     tabTemplateStyle: PropTypes.object,
+    /**
+     * Makes Tabs controllable and selects the tab whose value prop matches this prop.
+     */
+    value: PropTypes.any,
     /**
      * The type of tab component:
      *
@@ -100,6 +108,7 @@ class Tabs extends Component {
   static defaultProps = {
     initialSelectedIndex: 0,
     tabType: 'fixed',
+    onChange: () => {},
   };
 
   static contextTypes = {
@@ -114,11 +123,13 @@ class Tabs extends Component {
   };
 
   componentWillMount() {
-    const {
+      const valueLink = this.getValueLink(this.props);
+
+      const {
       initialSelectedIndex,
     } = this.props;
     if (initialSelectedIndex) {
-      this.updateSelectedIndexState(initialSelectedIndex);
+      this.updateSelectedIndexState(initialSelectedIndex, valueLink);
     }
   }
 
@@ -181,14 +192,17 @@ class Tabs extends Component {
     });
   }
 
-  handleTabClick = (tab) => {
-    const {
-      index,
-      onActive,
-    } = tab.props;
+  handleTabClick = (value, event, tab) => {
+    const valueLink = this.getValueLink(this.props);
+    const index = tab.props.index;
 
-    if (onActive) {
-      onActive(tab);
+    if ((valueLink.value && valueLink.value !== value) ||
+        this.state.selectedIndex !== index) {
+      valueLink.requestChange(value, event, tab);
+    }
+
+    if (tab.props.onActive) {
+      tab.props.onActive(tab);
     }
 
     this.scrollSelectedIntoView(index);
@@ -197,11 +211,15 @@ class Tabs extends Component {
       this.setState({
         selectedIndex: index,
       });
+    } else {
+      this.setState({selectedIndex: index});
     }
   };
 
   getSelected(tab, index) {
-    return this.state.selectedIndex === index;
+    const valueLink = this.getValueLink(this.props);
+    return valueLink.value ? valueLink.value === tab.props.value :
+        this.state.selectedIndex === index;
   }
 
   getContainerMeasurements = () => {
@@ -235,6 +253,27 @@ class Tabs extends Component {
 
   getTabCount() {
     return this.getTabs().length;
+  }
+
+  // Do not use outside of this component, it will be removed once valueLink is deprecated
+  getValueLink(props) {
+    return props.valueLink || {
+      value: props.value,
+      requestChange: props.onChange,
+    };
+  }
+
+  getSelectedIndex(props) {
+    const valueLink = this.getValueLink(props);
+    let selectedIndex = -1;
+
+    this.getTabs(props).forEach((tab, index) => {
+      if (valueLink.value === tab.props.value) {
+        selectedIndex = index;
+      }
+    });
+
+    return selectedIndex;
   }
 
   moveTabsScroll = (delta) => {
@@ -278,9 +317,13 @@ class Tabs extends Component {
     }
   }
 
-  updateSelectedIndexState = (index) => {
+  updateSelectedIndexState = (index, valueLink) => {
     this.setState({
-      selectedIndex: index < this.getTabCount() ? index : 0,
+      selectedIndex: valueLink.value !== undefined ?
+          this.getSelectedIndex(this.props) :
+          index < this.getTabCount() ?
+              index :
+              0,
     });
   }
 
@@ -290,6 +333,7 @@ class Tabs extends Component {
       contentContainerStyle,
       initialSelectedIndex, // eslint-disable-line no-unused-vars
       inkBarStyle,
+      onChange, // eslint-disable-line no-unused-vars
       style,
       tabItemContainerStyle,
       tabTemplate,
@@ -301,6 +345,7 @@ class Tabs extends Component {
 
     const {prepareStyles} = this.context.muiTheme;
     const styles = getStyles(this.props, this.context, this.state);
+    const valueLink = this.getValueLink(this.props);
     const tabContent = [];
     const fixedWidth = 100 / this.getTabCount();
 
@@ -332,6 +377,8 @@ class Tabs extends Component {
       });
     });
 
+    const realSelectedIndex = valueLink.value ? this.getSelectedIndex(this.props) : this.state.selectedIndex;
+
     const inkBarContainerWidth = tabItemContainerStyle ?
       tabItemContainerStyle.width : '100%';
 
@@ -348,7 +395,7 @@ class Tabs extends Component {
       }
     }
 
-    const inkBar = (
+    const inkBar = realSelectedIndex !== -1 ? (
       <div style={{width: inkBarContainerWidth}}>
         <InkBar
           left={`${inkBarLeft}px`}
@@ -356,7 +403,7 @@ class Tabs extends Component {
           style={inkBarStyle}
         />
       </div>
-    );
+    ) : null;
 
     const scrollButtonLeft = (
       (tabType === 'scrollable-buttons') ? (
